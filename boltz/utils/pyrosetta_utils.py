@@ -7,12 +7,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyrosetta as pr
 import torch
 from Bio.PDB import MMCIFParser, PDBParser, Selection
-from scipy.spatial import cKDTree
-from utils import *
-
-import pyrosetta as pr
 from pyrosetta.rosetta.core.io import pose_from_pose
 from pyrosetta.rosetta.core.kinematics import MoveMap
 from pyrosetta.rosetta.core.select import get_residues_from_subset
@@ -22,6 +19,8 @@ from pyrosetta.rosetta.protocols.analysis import InterfaceAnalyzerMover
 from pyrosetta.rosetta.protocols.relax import FastRelax
 from pyrosetta.rosetta.protocols.rosetta_scripts import XmlObjects
 from pyrosetta.rosetta.protocols.simple_moves import AlignChainMover
+from scipy.spatial import cKDTree
+from utils import *
 
 # Initialize PyRosetta with all needed options
 dalphaball_path = os.path.join(
@@ -32,8 +31,6 @@ pr.init(
 )
 
 
-
-
 def np_kabsch(a, b, return_v=False):
     """Get alignment matrix for two sets of coordinates using numpy
 
@@ -42,7 +39,8 @@ def np_kabsch(a, b, return_v=False):
         b: Second set of coordinates
         return_v: If True, return U matrix from SVD. If False, return rotation matrix
 
-    Returns:
+    Returns
+    -------
         Rotation matrix (or U matrix if return_v=True) to align coordinates
     """
     # Calculate covariance matrix
@@ -66,7 +64,8 @@ def np_rmsd(true, pred):
         true: Reference coordinates
         pred: Predicted coordinates to align
 
-    Returns:
+    Returns
+    -------
         Root mean square deviation after optimal alignment
     """
     # Center coordinates
@@ -78,9 +77,6 @@ def np_rmsd(true, pred):
 
     # Calculate RMSD
     return np.sqrt(np.mean(np.sum(np.square(p - q), axis=-1)) + 1e-8)
-
-
-
 
 
 def radius_of_gyration(path, chain_id="B"):
@@ -344,7 +340,7 @@ def score_interface(pdb_file, binder_chain="B"):
     iam.apply(pose)
 
     # Initialize dictionary with all amino acids
-    interface_AA = {aa: 0 for aa in "ACDEFGHIKLMNPQRSTVWY"}
+    interface_AA = dict.fromkeys("ACDEFGHIKLMNPQRSTVWY", 0)
 
     # Initialize list to store PDB residue IDs at the interface
     interface_residues_set = hotspot_residues(pdb_file, binder_chain)

@@ -1,41 +1,37 @@
-import os
-import sys
-import glob
 import gc
 import json
-import tempfile
+import os
+import random
 import subprocess
+import sys
+import warnings
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
-import random
-import warnings
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import torch
-import matplotlib.pyplot as plt
 import py3Dmol
-from dataclasses import asdict, replace
+import torch
 from prody import parsePDB
 
-from boltz.data.feature.featurizerv2 import Boltz2Featurizer
 from boltz.data.feature.featurizer import BoltzFeaturizer
+from boltz.data.feature.featurizerv2 import Boltz2Featurizer
 from boltz.data.mol import load_molecules, load_canonicals
+from boltz.data.msa.mmseqs2 import run_mmseqs2
+from boltz.data.parse.a3m import parse_a3m
 from boltz.data.parse.schema import parse_boltz_schema
-from boltz.data.tokenize.boltz2 import Boltz2Tokenizer
 from boltz.data.tokenize.boltz import BoltzTokenizer
-
+from boltz.data.tokenize.boltz2 import Boltz2Tokenizer
 from boltz.data.types import (
     MSA,
     Coords,
     Ensemble,
     Input,
-    StructureV2,
     Structure,
+    StructureV2,
 )
-
-from boltz.data.msa.mmseqs2 import run_mmseqs2
-from boltz.data.parse.a3m import parse_a3m
 from boltz.data.write.pdb import to_pdb
 from boltz.main import (
     Boltz2DiffusionParams,
@@ -44,15 +40,15 @@ from boltz.main import (
     PairformerArgs,
     PairformerArgsV2,
 )
-from boltz.model.models.boltz2 import Boltz2
 from boltz.model.models.boltz1 import Boltz1
+from boltz.model.models.boltz2 import Boltz2
 
 # Existing filter
 warnings.filterwarnings("ignore", message=".*requires_grad=True.*")
 warnings.filterwarnings(
-    "ignore", 
-    message="torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly.*", 
-    category=UserWarning
+    "ignore",
+    message="torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly.*",
+    category=UserWarning,
 )
 
 from utils.alphafold_utils import *
@@ -72,6 +68,7 @@ chain_to_number = {
     "J": 9,
 }
 
+
 def get_cif(cif_code=""):
     if cif_code is None or cif_code == "":
         print("Error: No cif code specified and uploads not supported in CLI mode.")
@@ -89,20 +86,21 @@ def get_cif(cif_code=""):
 
 
 def get_CA(x):
-  xyz = []
-  with open(x,"r") as file:
-    for line in file:
-      line = line.rstrip()
-      if line[:4] == "ATOM":
-        atom = line[12:12+4].strip()
-        if atom == "CA":
-          resi = line[17:17+3]
-          resn = int(line[22:22+5])-1
-          x = float(line[30:30+8])
-          y = float(line[38:38+8])
-          z = float(line[46:46+8])
-          xyz.append([x,y,z])
-  return np.array(xyz)
+    xyz = []
+    with open(x) as file:
+        for line in file:
+            line = line.rstrip()
+            if line[:4] == "ATOM":
+                atom = line[12 : 12 + 4].strip()
+                if atom == "CA":
+                    resi = line[17 : 17 + 3]
+                    resn = int(line[22 : 22 + 5]) - 1
+                    x = float(line[30 : 30 + 8])
+                    y = float(line[38 : 38 + 8])
+                    z = float(line[46 : 46 + 8])
+                    xyz.append([x, y, z])
+    return np.array(xyz)
+
 
 def np_kabsch(a, b, return_v=False):
     """Get alignment matrix for two sets of coordinates using numpy
@@ -112,7 +110,8 @@ def np_kabsch(a, b, return_v=False):
         b: Second set of coordinates
         return_v: If True, return U matrix from SVD. If False, return rotation matrix
 
-    Returns:
+    Returns
+    -------
         Rotation matrix (or U matrix if return_v=True) to align coordinates
     """
     # Calculate covariance matrix
@@ -136,7 +135,8 @@ def np_rmsd(true, pred):
         true: Reference coordinates
         pred: Predicted coordinates to align
 
-    Returns:
+    Returns
+    -------
         Root mean square deviation after optimal alignment
     """
     # Center coordinates
@@ -148,8 +148,6 @@ def np_rmsd(true, pred):
 
     # Calculate RMSD
     return np.sqrt(np.mean(np.sum(np.square(p - q), axis=-1)) + 1e-8)
-
-
 
 
 class OutOfChainsError(Exception):
@@ -177,7 +175,7 @@ def rename_chains(structure):
                 while c in chainmap:
                     next_chain += 1
                     if next_chain >= 62:
-                        raise OutOfChainsError()
+                        raise OutOfChainsError
                     c = int_to_chain(next_chain)
                 chainmap[c] = o.id
                 o.id = c
@@ -209,7 +207,8 @@ def convert_cif_to_pdb(ciffile, pdbfile):
         ciffile (str): Path to input CIF file
         pdbfile (str): Path to output PDB file
 
-    Returns:
+    Returns
+    -------
         bool: True if conversion succeeds, False otherwise
     """
     logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.WARNING)
@@ -235,6 +234,7 @@ def convert_cif_to_pdb(ciffile, pdbfile):
     io.set_structure(structure)
     io.save(pdbfile)
     return True
+
 
 def convert_cif_files_to_pdb(
     results_dir, save_dir, af_dir=False, high_iptm=False, i_ptm_cutoff=0.5
@@ -288,32 +288,31 @@ def convert_cif_files_to_pdb(
                     else:
                         print(f"Converting {cif_path}")
                         convert_cif_to_pdb(cif_path, pdb_path)
-            else:
-                if file.endswith(".cif"):
-                    cif_path = os.path.join(root, file)
-                    pdb_path = os.path.join(save_dir, file.replace(".cif", ".pdb"))
+            elif file.endswith(".cif"):
+                cif_path = os.path.join(root, file)
+                pdb_path = os.path.join(save_dir, file.replace(".cif", ".pdb"))
+                print(f"Converting {cif_path}")
+
+                if high_iptm:
+                    confidence_files = [
+                        f
+                        for f in os.listdir(root)
+                        if f.startswith("confidence_") and f.endswith(".json")
+                    ]
+                    if confidence_files:
+                        confidence_file = os.path.join(root, confidence_files[0])
+                        with open(confidence_file) as f:
+                            confidence_data = json.load(f)
+                            iptm = confidence_data["iptm"]
+                        if iptm > i_ptm_cutoff:
+                            print(f"Converting {cif_path}")
+                            print(f"Confidence file: {confidence_file}")
+                            print(f"iptm score: {iptm}")
+                            convert_cif_to_pdb(cif_path, pdb_path)
+
+                else:
                     print(f"Converting {cif_path}")
-
-                    if high_iptm:
-                        confidence_files = [
-                            f
-                            for f in os.listdir(root)
-                            if f.startswith("confidence_") and f.endswith(".json")
-                        ]
-                        if confidence_files:
-                            confidence_file = os.path.join(root, confidence_files[0])
-                            with open(confidence_file) as f:
-                                confidence_data = json.load(f)
-                                iptm = confidence_data["iptm"]
-                            if iptm > i_ptm_cutoff:
-                                print(f"Converting {cif_path}")
-                                print(f"Confidence file: {confidence_file}")
-                                print(f"iptm score: {iptm}")
-                                convert_cif_to_pdb(cif_path, pdb_path)
-
-                    else:
-                        print(f"Converting {cif_path}")
-                        convert_cif_to_pdb(cif_path, pdb_path)
+                    convert_cif_to_pdb(cif_path, pdb_path)
 
             if confidence_scores:
                 confidence_scores_path = os.path.join(
@@ -336,9 +335,7 @@ def binder_binds_contacts(
     if isinstance(contact_residues, str):
         if contact_residues.strip() == "":
             return True
-        contact_residues = [
-            int(x) for x in contact_residues.split(",") if x.strip()
-        ]
+        contact_residues = [int(x) for x in contact_residues.split(",") if x.strip()]
 
     structure = parsePDB(pdb_path)
     if structure is None:
@@ -385,30 +382,32 @@ def binder_binds_contacts(
     return contacted >= 2
 
 
-def sample_seq(length, all_X=False):
-    if all_X:
-        amino_acids = "X" * 200
-    else:
-        amino_acids = "ADEFGHIKLMNQRSTVWY" + "X" * 18
-    return "".join(random.choices(amino_acids, k=length))
+def sample_seq(length: int, exclude_P: bool = True, frac_X: float = 0.0) -> str:
+    aas = "ACDEFGHIKLMNQRSTVWY" + ("" if exclude_P else "P")
+    num_x = round(length * frac_X)
+    pool = aas if aas else "X"
+    seq_list = ["X"] * num_x + random.choices(pool, k=length - num_x)
+    random.shuffle(seq_list)
+    return "".join(seq_list)
+
 
 def shallow_copy_tensor_dict(d):
     if isinstance(d, dict):
         return {k: shallow_copy_tensor_dict(v) for k, v in d.items()}
-    elif isinstance(d, list):
+    if isinstance(d, list):
         return [shallow_copy_tensor_dict(x) for x in d]
-    elif isinstance(d, torch.Tensor):
+    if isinstance(d, torch.Tensor):
         return d.detach().clone()
-    else:
-        return d
+    return d
+
 
 def smart_split(s):
     if "," in s:
         return [x.strip() for x in s.split(",")]
-    elif ":" in s:
+    if ":" in s:
         return [x.strip() for x in s.split(":")]
-    else:
-        return [x.strip() for x in s.split()] if s else []
+    return [x.strip() for x in s.split()] if s else []
+
 
 def get_boltz_model(
     checkpoint: Optional[str] = None,
@@ -472,6 +471,7 @@ def get_boltz_model(
             no_atom_encoder=False,
         )
     return model_module
+
 
 def get_batch(
     target,
@@ -627,136 +627,6 @@ def get_batch(
     return batch, structure
 
 
-class LigandMPNNWrapper:
-    def __init__(
-        self,
-        run_py="LigandMPNN/run.py",
-        python="python",
-    ):
-        self.run_py = run_py
-        self.python = python
-
-
-    def run(
-        self,
-        pdb_path,
-        seed=111,
-        model_type="protein_mpnn",
-        bias_AA="",
-        omit_AA="C",
-        chains_to_design=None,
-        extra_args=None,
-        fix_unk=True,
-        return_logits=False,
-    ):
-        """
-        Run Ligand/ProteinMPNN and return sequences.
-        - pdb_path: path to CIF/PDB file
-        - chains_to_design: string like "B" or "AB"
-        - extra_args: dict of {flag: value}, e.g. {"--temperature": 0.1}
-        - fix_unk: if True, replace 'UNK' with 'GLY' in a temp copy
-        """
-        extra_args = dict(extra_args or {})
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out_folder = tmpdir
-
-            # preprocess CIF/PDB to replace UNK with GLY
-            pdb_copy = os.path.join(tmpdir, os.path.basename(pdb_path))
-            if fix_unk:
-                with open(pdb_path, "r") as fin, open(pdb_copy, "w") as fout:
-                    for line in fin:
-                        fout.write(line.replace("UNK", "GLY"))
-            else:
-                # just copy
-                with open(pdb_path, "r") as fin, open(pdb_copy, "w") as fout:
-                    fout.write(fin.read())
-
-            # build command
-            cmd = [
-                self.python,
-                self.run_py,
-                "--seed",
-                str(seed),
-                "--pdb_path",
-                pdb_copy,
-                "--out_folder",
-                out_folder,
-                "--model_type",
-                model_type,
-            ]
-
-            if omit_AA:  # only add if not empty string or None
-                cmd.extend(["--omit_AA", omit_AA])
-            if bias_AA:
-                cmd.extend(["--bias_AA", bias_AA])
-            if return_logits:
-                cmd.extend(["--return_logits"])
-            # Add model checkpoint based on model_type
-
-            run_py_path = os.path.abspath(self.run_py)
-            BASE_DIR = os.path.dirname(run_py_path)
-            MODEL_DIR = os.path.join(BASE_DIR, "model_params")
-
-            if model_type == "protein_mpnn":
-                cmd += ["--checkpoint_protein_mpnn", os.path.join(MODEL_DIR, "proteinmpnn_v_48_020.pt")]
-            elif model_type == "ligand_mpnn":
-                cmd += ["--checkpoint_ligand_mpnn", os.path.join(MODEL_DIR, "ligandmpnn_v_32_010_25.pt")]
-            elif model_type == "soluble_mpnn":
-                cmd += ["--checkpoint_soluble_mpnn", os.path.join(MODEL_DIR, "solublempnn_v_48_020.pt")]
-            if chains_to_design:
-                if isinstance(chains_to_design, (list, tuple)):
-                    chains_to_design = "".join(chains_to_design)
-                cmd += ["--chains_to_design", chains_to_design]
-            for k, v in extra_args.items():
-                cmd += [k, str(v)]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-
-            if return_logits:
-                # Find the JSON output in stdout (should be the last line or clean output)
-                stdout_lines = result.stdout.strip().split("\n")
-
-                # Try to find valid JSON - it should be the last non-empty line
-                json_str = None
-                for line in reversed(stdout_lines):
-                    line = line.strip()
-                    if line.startswith("{"):
-                        json_str = line
-                        break
-
-                if json_str is None:
-                    raise RuntimeError("Could not find JSON output in stdout")
-
-                try:
-                    output = json.loads(json_str)
-                except json.JSONDecodeError as e:
-                    raise RuntimeError(f"Failed to parse JSON output: {e}")
-
-                S = torch.tensor(output["S"][0])  # [L, 21]
-                log_probs = torch.tensor(output["log_probs"][0])  # [L, 21]
-                logits = torch.softmax(log_probs, dim=-1)  # final distribution
-                return S, logits
-
-            else:
-                if result.returncode != 0:
-                    raise RuntimeError(
-                        f"LigandMPNN failed with code {result.returncode}"
-                    )
-
-                # collect sequences
-                fasta_files = glob.glob(os.path.join(out_folder, "seqs", "*.fa"))
-                if not fasta_files:
-                    raise RuntimeError("No FASTA found in output folder.")
-                fasta = fasta_files[0]
-
-
-                seqs = []
-                with open(fasta) as f:
-                    for line in f:
-                        if not line.startswith(">"):
-                            seqs.append(line.strip())
-                return seqs[1:], None
-
-
 def process_msa(chain_id: str, sequence: str, msa_dir: Path) -> bool:
     """Process MSA for a single chain."""
     msa_chain_dir = msa_dir / f"{chain_id}"
@@ -811,6 +681,7 @@ def clean_memory():
     torch.cuda.empty_cache()
     aggressive_memory_cleanup()
 
+
 def run_prediction(
     data,
     binder_chain,
@@ -828,7 +699,13 @@ def run_prediction(
 ):
     if seq is not None:
         data["sequences"][chain_to_number[binder_chain]]["protein"]["sequence"] = seq
-    target = parse_boltz_schema(name, data, ccd_lib, ccd_path, boltz_2=True if boltz_model_version == "boltz2" else False)
+    target = parse_boltz_schema(
+        name,
+        data,
+        ccd_lib,
+        ccd_path,
+        boltz_2=True if boltz_model_version == "boltz2" else False,
+    )
     batch, structure = get_batch(
         target,
         ccd_path,
@@ -857,6 +734,7 @@ def save_pdb(structure, coords, plddts, filename):
     with open(filename, "w") as f:
         f.write(to_pdb(structure, plddts, boltz2=True))
 
+
 def design_sequence(
     designer,
     model_type,
@@ -882,8 +760,8 @@ def design_sequence(
     )
     if return_logits:
         return seq, logits
-    else:
-        return seq[0], logits
+    return seq[0], logits
+
 
 def plot_from_pdb(
     pdb_file: str,
@@ -945,9 +823,10 @@ def plot_from_pdb(
     return view.show()
 
 
-def plot_run_metrics(run_save_dir: str, name: str, run_id: int, num_cycles: int, run_metrics: dict):
+def plot_run_metrics(
+    run_save_dir: str, name: str, run_id: int, num_cycles: int, run_metrics: dict
+):
     """Plot per-run figure to run subfolder, given run_metrics as input."""
-
     fig, axs = plt.subplots(1, 4, figsize=(12, 3))
     colors = ["#9B59B6", "#E94560", "#FF7F11", "#2ECC71"]
     metrics = [
@@ -999,9 +878,7 @@ def plot_run_metrics(run_save_dir: str, name: str, run_id: int, num_cycles: int,
         ),
     ]
     design_cycles = list(range(num_cycles + 1))
-    for ax, (label, values, ymin, ymax, fmt), color in zip(
-        axs, metrics, colors
-    ):
+    for ax, (label, values, ymin, ymax, fmt), color in zip(axs, metrics, colors):
         ax.plot(
             design_cycles,
             values,
@@ -1031,11 +908,10 @@ def plot_run_metrics(run_save_dir: str, name: str, run_id: int, num_cycles: int,
                 fontsize=9,
             )
     plt.tight_layout()
-    plt.savefig(
-        f"{run_save_dir}/{name}_run_{run_id}_design_cycle_results.png", dpi=300
-    )
+    plt.savefig(f"{run_save_dir}/{name}_run_{run_id}_design_cycle_results.png", dpi=300)
     plt.show()
     # plt.close()
+
 
 def calculate_holo_apo_rmsd(af_pdb_dir, af_pdb_dir_apo, binder_chain):
     """Calculate RMSD between holo and apo structures and update confidence CSV.
@@ -1060,7 +936,6 @@ def calculate_holo_apo_rmsd(af_pdb_dir, af_pdb_dir_apo, binder_chain):
                 ] = rmsd
                 print(f"{pdb_path} rmsd: {rmsd}")
         df_confidence_csv.to_csv(confidence_csv_path, index=False)
-
 
 
 def run_alphafold_step(
@@ -1149,6 +1024,7 @@ def run_rosetta_step(
     ligandmpnn_dir, af_pdb_dir, af_pdb_dir_apo, binder_id="A", target_type="protein"
 ):
     from utils.pyrosetta_utils import measure_rosetta_energy
+
     """Run Rosetta energy calculation (protein targets only)"""
     if target_type not in ["protein", "peptide"]:
         print("Skipping Rosetta step (not a protein/peptide target)")

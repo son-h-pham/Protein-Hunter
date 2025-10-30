@@ -50,7 +50,6 @@ We have implemented two different AF3-style models in our Protein Hunter pipelin
 - Chai1
 
 
-
 ## Run Code End-to-End
 - **Protein-protein design:**  
   To design a protein-protein complex, run:  
@@ -58,6 +57,8 @@ We have implemented two different AF3-style models in our Protein Hunter pipelin
   python boltz/protein_hunter.py --num_designs 3 --num_cycles 7 --protein_seqs AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPYAAALE --protein_ids B --protein_msas "" --gpu_id 2 --name PDL1_mix_aa --min_design_protein_length 90 --max_design_protein_length 150 --high_iptm_threshold 0.7 --use_msa_for_af3 --plot
   ```
 
+
+## Protein Hunter (Boltz Edition ⚡) 
 - **Small molecule binder design:**  
   For designing a protein binder for a small molecule (e.g. SAM), use:  
   ```
@@ -76,6 +77,7 @@ We have implemented two different AF3-style models in our Protein Hunter pipelin
   python one_shot_diff/run.py --num_designs 5 --num_cycles 7 --protein_seqs AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPYAAALE --protein_ids B --protein_msas "" --ligand_ccd SAM --ligand_id C --gpu_id 0 --name PDL1_SAM --min_design_protein_length 90 --max_design_protein_length 150 --high_iptm_threshold 0.8 --use_msa_for_af3 --plot
   ```
 
+## Protein Hunter (Chai Edition ☕) 
 
 ⚠️ **Warning**: To run the AlphaFold3 cross-validation pipeline, you need to specify your AlphaFold3 directory, Docker name, database settings, and conda environment in the configuration. These can be set using the following arguments:
 - `--alphafold_dir`: Path to your AlphaFold3 installation (default: ~/alphafold3)

@@ -1,17 +1,19 @@
 # af3_generate_rna_msa is implemented from ColabNuFold (https://colab.research.google.com/github/kiharalab/nufold/blob/master/ColabNuFold.ipynb#scrollTo=KDs4o5Bv35MI)
 
-import os
 import json
 import logging
+import os
 import subprocess
 import tempfile
 import time
 import urllib
 from pathlib import Path
-from boltz.data.msa.mmseqs2 import run_mmseqs2
-from boltz.data.parse.a3m import parse_a3m
+
 import yaml
 from tqdm import tqdm
+
+from boltz.data.msa.mmseqs2 import run_mmseqs2
+from boltz.data.parse.a3m import parse_a3m
 
 rna_default_setting = {
     "use_rfam_db": True,
@@ -56,7 +58,6 @@ chain_to_number = {
 }
 
 
-
 def process_msa(chain_id: str, sequence: str, pdb_code: str, msa_dir: Path) -> bool:
     """Process MSA for a single chain."""
     msa_chain_dir = msa_dir / f"{pdb_code}_{chain_id}"
@@ -89,7 +90,6 @@ def process_msa(chain_id: str, sequence: str, pdb_code: str, msa_dir: Path) -> b
 
     logger.info(f"Processed MSA for {pdb_code} chain {chain_id}")
     return msa_a3m_path
-
 
 
 def download_with_progress(url, dest_path):
@@ -222,7 +222,7 @@ def run_command(cmd, cmd_name):
             cmd, check=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE, text=True
         )
     except subprocess.CalledProcessError as e:
-        logging.error(f"{cmd_name} failed.\nstdout: {e.stdout}\nstderr: {e.stderr}")
+        logging.exception(f"{cmd_name} failed.\nstdout: {e.stdout}\nstderr: {e.stderr}")
         raise RuntimeError(
             f"{cmd_name} failed\nstdout: {e.stdout}\nstderr: {e.stderr}"
         ) from e
@@ -514,10 +514,9 @@ class Nhmmer:
 
                 # Return A3M with query sequence first
                 return "".join([target_sequence_fasta, aligned_a3m])
-            else:
-                print("⚠️ No hits found")
-                # No hits - return only query sequence
-                return f">query\n{target_sequence}"
+            print("⚠️ No hits found")
+            # No hits - return only query sequence
+            return f">query\n{target_sequence}"
 
 
 class Hmmbuild:
@@ -825,10 +824,9 @@ def af3_generate_rna_msa(rna_sequence, database_settings, afdb_dir, hmmer_path):
             "⚠️ No selected databases could be downloaded or found. Continuing with query sequence only."
         )
         return f">query\n{rna_sequence}\n"
-    else:
-        print(
-            f"📊 Found {len(selected_existing_dbs)} selected databases: {', '.join(selected_existing_dbs)}"
-        )
+    print(
+        f"📊 Found {len(selected_existing_dbs)} selected databases: {', '.join(selected_existing_dbs)}"
+    )
 
     # Generate MSA
     print("🚀 Starting MSA generation...")
@@ -1091,7 +1089,8 @@ def process_yaml_files(
                         protein_entry["protein"]["modifications"].append(
                             {
                                 "ptmType": item.get("ccd") or item.get("ptmType"),
-                                "ptmPosition": item.get("position") or item.get("ptmPosition"),
+                                "ptmPosition": item.get("position")
+                                or item.get("ptmPosition"),
                             }
                         )
             json_result["sequences"].append(protein_entry)
@@ -1127,7 +1126,7 @@ def process_yaml_files(
             lig_entry = {
                 "ligand": {
                     "id": lig["id"][0] if isinstance(lig["id"], list) else lig["id"],
-                    "ccdCodes": [lig["ccd"]]
+                    "ccdCodes": [lig["ccd"]],
                 }
             }
             json_result["sequences"].append(lig_entry)
@@ -1149,8 +1148,12 @@ def process_yaml_files(
                 "protein": {
                     "id": chain,
                     "sequence": seq,
-                    "pairedMsa": processed_msas[i_binder] if processed_msas else f">query\n{seq}",
-                    "unpairedMsa": processed_msas[i_binder] if processed_msas else f">query\n{seq}",
+                    "pairedMsa": processed_msas[i_binder]
+                    if processed_msas
+                    else f">query\n{seq}",
+                    "unpairedMsa": processed_msas[i_binder]
+                    if processed_msas
+                    else f">query\n{seq}",
                     "templates": [],
                 }
             }
@@ -1163,7 +1166,8 @@ def process_yaml_files(
                         protein_entry["protein"]["modifications"].append(
                             {
                                 "ptmType": item.get("ccd") or item.get("ptmType"),
-                                "ptmPosition": item.get("position") or item.get("ptmPosition"),
+                                "ptmPosition": item.get("position")
+                                or item.get("ptmPosition"),
                             }
                         )
             json_result_apo["sequences"].append(protein_entry)
@@ -1174,6 +1178,7 @@ def process_yaml_files(
 
         with open(os.path.join(af_input_apo_dir, f"{name}.json"), "w") as f:
             json.dump(json_result_apo, f, indent=4)
+
 
 def extract_sequences_and_format(a3m_file_path, replace_query_seq=False, query_seq=""):
     sequences = []

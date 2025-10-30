@@ -90,7 +90,7 @@ cmd = [
     "--nucleic_id", "C",
     "--min_design_protein_length", "90",
     "--max_design_protein_length", "150",
-    "--high_iptm_threshold", "0.7"
+    "--high_iptm_threshold", "0.7",
     "--use_msa_for_af3",
     "--plot"
 ]
