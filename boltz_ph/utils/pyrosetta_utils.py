@@ -79,6 +79,55 @@ def np_rmsd(true, pred):
     return np.sqrt(np.mean(np.sum(np.square(p - q), axis=-1)) + 1e-8)
 
 
+def get_CA_and_sequence(structure_file, chain_id="A"):
+    # Determine file type and use appropriate parser
+    if structure_file.endswith(".cif"):
+        parser = MMCIFParser(QUIET=True)
+    elif structure_file.endswith(".pdb"):
+        parser = PDBParser(QUIET=True)
+    else:
+        raise ValueError("File must be either .cif or .pdb format")
+
+    structure = parser.get_structure("structure", structure_file)
+    xyz = []
+    sequence = []
+    aa_map = {
+        "ALA": "A",
+        "ARG": "R",
+        "ASN": "N",
+        "ASP": "D",
+        "CYS": "C",
+        "GLU": "E",
+        "GLN": "Q",
+        "GLY": "G",
+        "HIS": "H",
+        "ILE": "I",
+        "LEU": "L",
+        "LYS": "K",
+        "MET": "M",
+        "PHE": "F",
+        "PRO": "P",
+        "SER": "S",
+        "THR": "T",
+        "TRP": "W",
+        "TYR": "Y",
+        "VAL": "V",
+    }
+
+    model = structure[0]  # Get first model (default for most structures)
+
+    if chain_id in model:
+        chain = model[chain_id]
+        for residue in chain:
+            if "CA" in residue:
+                xyz.append(residue["CA"].coord)
+                sequence.append(aa_map.get(residue.resname, "X"))
+    else:
+        raise ValueError(f"Chain {chain_id} not found in {structure_file}")
+
+    return xyz, sequence
+
+
 def radius_of_gyration(path, chain_id="B"):
     if path.endswith(".cif"):
         parser = MMCIFParser()

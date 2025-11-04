@@ -40,8 +40,8 @@ def parse_args():
     parser.add_argument(
         "--template_path", default="", type=str
     )  # can be "2VSM", or path(s) to .cif/.pdb, multiple allowed separated by comma
-    parser.add_argument("--mediator_chain", default="", type=str)
-    parser.add_argument("--template_chain_id", default="", type=str)
+    parser.add_argument("--template_chain_id", default="", type=str) # for prediction, the chain id to use for the template
+    parser.add_argument("--template_cif_chain_id", default="", type=str) # for mmCIF files, the chain id to use for the template (for alignment)
     parser.add_argument("--no_potentials", action="store_true")
     parser.add_argument("--diffuse_steps", default=200, type=int)
     parser.add_argument("--recycling_steps", default=3, type=int)

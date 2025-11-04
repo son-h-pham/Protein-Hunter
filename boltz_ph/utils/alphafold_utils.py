@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import sys
 import subprocess
 import tempfile
 import time
@@ -13,10 +14,13 @@ import yaml
 from tqdm import tqdm
 import numpy as np
 import pandas as pd
-from Bio.PDB import MMCIFParser, PDBParser
-from Bio.PDB.PDBIO import PDBIO
 from boltz.data.msa.mmseqs2 import run_mmseqs2
 from boltz.data.parse.a3m import parse_a3m
+
+from Bio import pairwise2
+from Bio.PDB import PDBParser, MMCIFParser, PDBIO
+from Bio.Data import IUPACData
+import requests, io
 
 rna_default_setting = {
     "use_rfam_db": True,
@@ -1408,6 +1412,296 @@ def process_yaml_files(
             json.dump(json_result_apo, f, indent=4)
 
 
+
+def process_yaml_files(
+    yaml_dir,
+    af_input_dir,
+    af_input_apo_dir,
+    binder_chain="A",
+    use_msa_for_af3=False,
+):
+    """
+    Process YAML files for AlphaFold3 input, supporting flexible multi-chain, multi-type targets.
+
+    Args:
+        yaml_dir (Path): Directory containing YAML files
+        af_input_dir (str): Output directory for complex JSON files
+        af_input_apo_dir (str): Output directory for apo JSON files
+        target_type (str): Not actually used, will be ignored for flexibility
+        binder_chain (str): Binder chain (default "A")
+        mod_to_wt_aa, afdb_dir, hmmer_path, use_msa_for_af3: see prior API
+    """
+    # For each design YAML, parse the "sequences" flexibly: detect proteins, ligands, nucleics, metals, etc!
+    for yaml_path in Path(yaml_dir).glob("*.yaml"):
+        print("yaml_path", yaml_path)
+        name = os.path.basename(yaml_path).split(".yaml")[0]
+        with open(yaml_path) as file:
+            yaml_data = yaml.safe_load(file)
+
+        # Parse out all chains and types in the data for this YAML
+        protein_entries = []
+        ligand_entries = []
+        rna_entries = []
+        dna_entries = []
+        metal_entries = []
+        binder_protein_entry = None
+        binder_idx = None
+
+        for i, seq in enumerate(yaml_data["sequences"]):
+            # Proteins
+            if "protein" in seq:
+                ids = seq["protein"].get("id", ["?"])
+                if binder_chain in ids:
+                    binder_idx = i
+                    binder_protein_entry = seq["protein"]
+                else:
+                    protein_entries.append((i, seq["protein"]))
+            # Small-molecule ligand or metal (ccd can mean either)
+            if "ligand" in seq:
+                entry = seq["ligand"]
+                if entry.get("smiles"):
+                    ligand_entries.append(entry)
+                elif entry.get("ccd"):
+                    # Could be metal or small-molecule, we'll just use ccd "as is"
+                    metal_entries.append(entry)
+            # RNA or DNA
+            if "rna" in seq:
+                rna_entries.append(seq["rna"])
+            if "dna" in seq:
+                dna_entries.append(seq["dna"])
+
+        # Build JSON entries for all present types
+        # Proteins: order is all "target" proteins (non-binder), then binder
+        all_protein_ids = []
+        all_protein_seqs = []
+        all_protein_msas = []
+        all_protein_templates = []
+        modification_ls = []
+        modification_chain = []
+        query_seqs = []
+        binder_chain_id = None
+        # First, all non-binder proteins
+        for _, p in protein_entries:
+            all_protein_ids.append(p["id"][0])
+            all_protein_seqs.append(p["sequence"])
+            all_protein_msas.append(p.get("msa", "empty"))
+            query_seqs.append(p["sequence"])
+            if "modifications" in p:
+                modification_ls.append(p["modifications"])
+                modification_chain.append(p["id"][0])
+            else:
+                modification_ls.append([])
+                modification_chain.append([])
+
+        # The binder protein (last)
+        if binder_protein_entry:
+            binder_chain_id = binder_protein_entry["id"][0]
+            all_protein_ids.append(binder_chain_id)
+            all_protein_seqs.append(binder_protein_entry["sequence"])
+            all_protein_msas.append(binder_protein_entry.get("msa", "empty"))
+            query_seqs.append(binder_protein_entry["sequence"])
+            if "modifications" in binder_protein_entry:
+                modification_ls.append(binder_protein_entry["modifications"])
+                modification_chain.append(binder_chain_id)
+            else:
+                modification_ls.append([])
+                modification_chain.append([])
+
+
+
+        # If templates are defined in YAML, process them.
+        # Templates are expected to be a list of dicts, each with 'cif' or 'pdb', and 'chain_id'
+        all_protein_templates = []
+        if "templates" in yaml_data:
+            print("yaml_data['templates']", yaml_data["templates"])
+            for template_entry in yaml_data["templates"]:
+                template_path = template_entry.get("cif") or template_entry.get("pdb")
+                template_ids = None
+                template_cif_ids = None
+                # Prefer 'chain_id' over 'ids' if present
+                if "chain_id" in template_entry:
+                    template_ids = [template_entry["chain_id"]]
+                    if "cif_chain_id" in template_entry:
+                        template_cif_ids = [template_entry["cif_chain_id"]]
+                    else:
+                        template_cif_ids = None
+                elif "ids" in template_entry:
+                    template_ids = template_entry["ids"]
+                template_dict = {"path": template_path}
+                if template_ids is not None:
+                    template_dict["ids"] = template_ids
+                    template_dict["cif_ids"] = template_cif_ids
+                all_protein_templates.append(template_dict)
+        print("all_protein_templates", all_protein_templates)
+
+
+        # Process MSAs for each protein; ensure each gets a formatted sequence
+        processed_msas = []
+        for target_seq, msa_path, chain_id, query_seq in zip(
+            all_protein_seqs, all_protein_msas, all_protein_ids, query_seqs
+        ):
+            if chain_id == binder_chain:
+                # For the binder chain, do not get MSA, just insert the query sequence
+                processed_msas.append(f">query\n{query_seq}")
+                continue
+
+            msa_file = None
+            if msa_path and msa_path not in ["empty", ""]:
+                msa_file = msa_path.replace(".npz", ".a3m")
+                if os.path.exists(msa_file):
+                    protein_msa = extract_sequences_and_format(
+                        msa_file, replace_query_seq=True, query_seq=query_seq
+                    )
+                else:
+                    protein_msa = f">query\n{query_seq}"
+                processed_msas.append(protein_msa)
+            elif msa_path == "empty" and use_msa_for_af3:
+                try:
+                    # Best effort: process MSA on-the-fly
+                    msa_file = process_msa(
+                        chain_id=chain_id,
+                        sequence=target_seq,
+                        pdb_code="query",
+                        msa_dir=Path(yaml_dir),
+                    )
+                    protein_msa = extract_sequences_and_format(
+                        msa_file, replace_query_seq=True, query_seq=query_seq
+                    )
+                    processed_msas.append(protein_msa)
+                except Exception as e:
+                    print(f"WARNING: Failed to get or make MSA for {chain_id}: {e}")
+                    processed_msas.append(f">query\n{query_seq}")
+            else:
+                processed_msas.append(f">query\n{query_seq}")
+
+
+        # Build the json_result as needed for AF3
+        json_result = {
+            "name": name,
+            "sequences": [],
+            "modelSeeds": [1],
+            "dialect": "alphafold3",
+            "version": 1,
+        }
+        # Add proteins
+        print("all_protein_templates", all_protein_templates)
+        for i, (seq, chain) in enumerate(zip(all_protein_seqs, all_protein_ids)):
+            # Find matching template(s) for this chain, if any. Only match if ids contains chain.
+            matched_template = next((tpl for tpl in all_protein_templates if "ids" in tpl and chain in tpl["ids"]), None)
+            if matched_template:
+                templates = [get_cif_alignment_json(seq, matched_template["path"],matched_template["cif_ids"][0])]
+            else:
+                templates = []
+            protein_entry = {
+                "protein": {
+                    "id": chain,
+                    "sequence": seq,
+                    "pairedMsa": processed_msas[i],
+                    "unpairedMsa": processed_msas[i],
+                    "templates": templates,
+                }
+            }
+            # Add modifications if present
+            if modification_chain and i < len(modification_chain):
+                mods = modification_ls[i]
+                if len(mods) > 0:
+                    protein_entry["protein"]["modifications"] = []
+                    for item in mods:
+                        protein_entry["protein"]["modifications"].append(
+                            {
+                                "ptmType": item.get("ccd") or item.get("ptmType"),
+                                "ptmPosition": item.get("position")
+                                or item.get("ptmPosition"),
+                            }
+                        )
+            json_result["sequences"].append(protein_entry)
+        # Add rna
+        for rna in rna_entries:
+            rna_entry = {
+                "rna": {
+                    "id": rna["id"][0] if isinstance(rna["id"], list) else rna["id"],
+                    "sequence": rna["sequence"],
+                    "unpairedMsa": f">query\n{rna['sequence']}",
+                }
+            }
+            json_result["sequences"].append(rna_entry)
+        # Add dna
+        for dna in dna_entries:
+            dna_entry = {
+                "dna": {
+                    "id": dna["id"][0] if isinstance(dna["id"], list) else dna["id"],
+                    "sequence": dna["sequence"],
+                }
+            }
+            json_result["sequences"].append(dna_entry)
+        # Add ligands (SMILES and/or ccds; ccd can be used for metal too)
+        for lig in ligand_entries:
+            lig_entry = {
+                "ligand": {
+                    "id": lig["id"][0] if isinstance(lig["id"], list) else lig["id"],
+                    "smiles": lig["smiles"],
+                }
+            }
+            json_result["sequences"].append(lig_entry)
+        for lig in metal_entries:
+            lig_entry = {
+                "ligand": {
+                    "id": lig["id"][0] if isinstance(lig["id"], list) else lig["id"],
+                    "ccdCodes": [lig["ccd"]],
+                }
+            }
+            json_result["sequences"].append(lig_entry)
+
+        # Build the json_result_apo: only the binder (or last protein entry)
+        # fallback: if no proteins, skip apo!
+        json_result_apo = {
+            "name": name,
+            "sequences": [],
+            "modelSeeds": [1],
+            "dialect": "alphafold3",
+            "version": 1,
+        }
+        if len(all_protein_ids) > 0 and len(all_protein_seqs) > 0:
+            i_binder = len(all_protein_ids) - 1
+            seq = all_protein_seqs[i_binder]
+            chain = all_protein_ids[i_binder]
+            protein_entry = {
+                "protein": {
+                    "id": chain,
+                    "sequence": seq,
+                    "pairedMsa": processed_msas[i_binder]
+                    if processed_msas
+                    else f">query\n{seq}",
+                    "unpairedMsa": processed_msas[i_binder]
+                    if processed_msas
+                    else f">query\n{seq}",
+                    "templates": [],
+                }
+            }
+            # Add modifications if present
+            if modification_chain and i_binder < len(modification_chain):
+                mods = modification_ls[i_binder]
+                if len(mods) > 0:
+                    protein_entry["protein"]["modifications"] = []
+                    for item in mods:
+                        protein_entry["protein"]["modifications"].append(
+                            {
+                                "ptmType": item.get("ccd") or item.get("ptmType"),
+                                "ptmPosition": item.get("position")
+                                or item.get("ptmPosition"),
+                            }
+                        )
+            json_result_apo["sequences"].append(protein_entry)
+
+        # Write files
+        with open(os.path.join(af_input_dir, f"{name}.json"), "w") as f:
+            json.dump(json_result, f, indent=4)
+
+        with open(os.path.join(af_input_apo_dir, f"{name}.json"), "w") as f:
+            json.dump(json_result_apo, f, indent=4)
+
+
+
 def extract_sequences_and_format(a3m_file_path, replace_query_seq=False, query_seq=""):
     sequences = []
     first_sequence_reformatted = (
@@ -1498,6 +1792,113 @@ def get_CA_and_sequence(structure_file, chain_id="A"):
     return xyz, sequence
 
 
+def get_cif_alignment_json(query_seq, cif_or_id, chain_id=None):
+    """
+    Given a query sequence and a PDB id (str, e.g. '1G13') or a path to a .cif file,
+    returns a dict with mmCIF text (filtered to selected chain), and alignment indices 
+    (queryIndices, templateIndices) for the first chain (or optionally specified chain_id).
+    """
+    # Load mmCIF
+    if cif_or_id.lower().endswith('.cif') and os.path.isfile(cif_or_id):
+        with open(cif_or_id) as f:
+            mmcif_text = f.read()
+        pdb_id = os.path.splitext(os.path.basename(cif_or_id))[0]
+    else:
+        pdb_id = cif_or_id.upper()
+        url = f"https://files.rcsb.org/download/{pdb_id}.cif"
+        mmcif_text = requests.get(url).text
+
+    # Parse structure and extract chain
+    parser = MMCIFParser(QUIET=True)
+    structure = parser.get_structure(pdb_id, io.StringIO(mmcif_text))
+    if chain_id is not None:
+        chain = next((ch for ch in structure.get_chains() if ch.id == chain_id), None)
+        if chain is None:
+            raise ValueError(f"Chain {chain_id} not found in structure {pdb_id}.")
+    else:
+        chain = next(structure.get_chains())  # default: first chain
+    
+    selected_chain_id = chain.id
+
+    # Build 1-letter template sequence using 3-letter code mapping
+    three_to_one = IUPACData.protein_letters_3to1
+    template_seq = "".join(
+        three_to_one.get(residue.resname.capitalize(), "X")
+        for residue in chain.get_residues() if residue.id[0] == " "
+    )
+
+    # Align
+    align = pairwise2.align.globalxx(query_seq, template_seq)[0]
+    q_aln, t_aln = align.seqA, align.seqB
+
+    # Extract index mappings
+    query_indices, template_indices = [], []
+    q_pos = t_pos = 0
+    for q_char, t_char in zip(q_aln, t_aln):
+        if q_char != "-" and t_char != "-":
+            query_indices.append(q_pos)
+            template_indices.append(t_pos)
+        if q_char != "-": q_pos += 1
+        if t_char != "-": t_pos += 1
+
+    # Filter mmCIF to only include the selected chain
+    filtered_mmcif = filter_mmcif_by_chain(mmcif_text, selected_chain_id)
+
+    return {
+        "mmcif": filtered_mmcif,
+        "queryIndices": query_indices,
+        "templateIndices": template_indices
+    }
+
+
+def filter_mmcif_by_chain(mmcif_text, chain_id):
+    """
+    Filter mmCIF text to only include data for the specified chain.
+    Keeps header information and filters atom_site and other relevant sections.
+    """
+    lines = mmcif_text.split('\n')
+    filtered_lines = []
+    in_atom_site = False
+    atom_site_columns = {}
+    chain_column_idx = None
+    
+    for line in lines:
+        # Keep all header and metadata lines
+        if line.startswith('data_') or line.startswith('_entry.') or \
+           line.startswith('_audit') or line.startswith('_database') or \
+           line.startswith('_entity') or line.startswith('_struct') or \
+           line.startswith('_exptl') or line.startswith('_cell') or \
+           line.startswith('_symmetry') or line.startswith('#'):
+            filtered_lines.append(line)
+            continue
+        
+        # Detect start of atom_site section
+        if line.startswith('_atom_site.'):
+            in_atom_site = True
+            filtered_lines.append(line)
+            # Parse column name
+            col_name = line.split('.')[1].split()[0]
+            atom_site_columns[col_name] = len(atom_site_columns)
+            if col_name == 'label_asym_id' or col_name == 'auth_asym_id':
+                chain_column_idx = len(atom_site_columns) - 1
+            continue
+        
+        # Filter atom_site data lines
+        if in_atom_site:
+            if line.startswith('ATOM') or line.startswith('HETATM'):
+                parts = line.split()
+                if chain_column_idx is not None and len(parts) > chain_column_idx:
+                    if parts[chain_column_idx] == chain_id:
+                        filtered_lines.append(line)
+            elif line.strip() == '' or line.startswith('_') or line.startswith('loop_'):
+                in_atom_site = False
+                filtered_lines.append(line)
+            else:
+                filtered_lines.append(line)
+        else:
+            filtered_lines.append(line)
+    
+    return '\n'.join(filtered_lines)
 
 def calculate_holo_apo_rmsd(af_pdb_dir, af_pdb_dir_apo, binder_chain):
     """Calculate RMSD between holo and apo structures and update confidence CSV.

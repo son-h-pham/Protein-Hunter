@@ -72,19 +72,27 @@ chain_to_number = {
 
 
 def get_cif(cif_code=""):
+    """
+    Returns the local filename (relative path) to the CIF for the provided code or file.
+    Checks local directory and fetches from RCSB or AlphaFold if needed.
+    """
     if cif_code is None or cif_code == "":
         print("Error: No cif code specified and uploads not supported in CLI mode.")
         sys.exit(1)
     elif os.path.isfile(cif_code):
-        return cif_code
+        return os.path.abspath(cif_code)
     elif len(cif_code) == 4:
-        os.system(f"wget -qnc https://files.rcsb.org/download/{cif_code}.cif")
-        return f"{cif_code}.cif"
+        local_cif = f"{cif_code}.cif"
+        if not os.path.isfile(local_cif):
+            os.system(f"wget -qnc https://files.rcsb.org/download/{cif_code}.cif")
+        return os.path.abspath(local_cif)
     else:
-        os.system(
-            f"wget -qnc https://alphafold.ebi.ac.uk/files/AF-{cif_code}-F1-model_v3.cif"
-        )
-        return f"AF-{cif_code}-F1-model_v3.cif"
+        local_cif = f"AF-{cif_code}-F1-model_v3.cif"
+        if not os.path.isfile(local_cif):
+            os.system(
+                f"wget -qnc https://alphafold.ebi.ac.uk/files/AF-{cif_code}-F1-model_v3.cif"
+            )
+        return os.path.abspath(local_cif)
 
 
 def get_CA(x):
@@ -153,7 +161,7 @@ def binder_binds_contacts(
         c_coord = filtered_target_coords[idx]
         distances = np.sqrt(np.sum((binder_coords - c_coord) ** 2, axis=-1))
         if np.any(distances < cutoff):
-            print(f"Contacted residue {c_resnum} by binder CA")
+            # print(f"Contacted residue {c_resnum} by binder CA")
             contacted += 1
 
     if len(filtered_contact_resnums) == 0:

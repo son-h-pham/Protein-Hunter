@@ -806,6 +806,7 @@ def parse_mmcif(  # noqa: C901, PLR0915, PLR0912
     moldir: Optional[str] = None,
     use_assembly: bool = True,
     compute_interfaces: bool = True,
+    ignore_ligands: bool = False,
 ) -> ParsedStructure:
     """Parse a structure in MMCIF format.
 
@@ -932,40 +933,41 @@ def parse_mmcif(  # noqa: C901, PLR0915, PLR0912
                 chains.append(parsed_polymer)
 
         # Parse a non-polymer
-        elif entity_type in {"NonPolymer", "Branched"}:
-            # Skip UNL
-            if any(lig.name == "UNL" for lig in raw_chain):
-                continue
+        if not ignore_ligands:
+            if entity_type in {"NonPolymer", "Branched"}:
+                # Skip UNL
+                if any(lig.name == "UNL" for lig in raw_chain):
+                    continue
 
-            residues = []
-            for lig_idx, ligand in enumerate(raw_chain):
-                # Check if ligand is covalent
-                if entity_type == "Branched":
-                    is_covalent = True
-                else:
-                    is_covalent = subchain_id in covalent_chain_ids
+                residues = []
+                for lig_idx, ligand in enumerate(raw_chain):
+                    # Check if ligand is covalent
+                    if entity_type == "Branched":
+                        is_covalent = True
+                    else:
+                        is_covalent = subchain_id in covalent_chain_ids
 
-                ligand: gemmi.Residue
-                ligand_mol = get_mol(ligand.name, mols, moldir)
+                    ligand: gemmi.Residue
+                    ligand_mol = get_mol(ligand.name, mols, moldir)
 
-                residue = parse_ccd_residue(
-                    name=ligand.name,
-                    ref_mol=ligand_mol,
-                    res_idx=lig_idx,
-                    gemmi_mol=ligand,
-                    is_covalent=is_covalent,
-                )
-                residues.append(residue)
-
-            if residues:
-                chains.append(
-                    ParsedChain(
-                        name=subchain_id,
-                        entity=entity.name,
-                        residues=residues,
-                        type=const.chain_type_ids["NONPOLYMER"],
+                    residue = parse_ccd_residue(
+                        name=ligand.name,
+                        ref_mol=ligand_mol,
+                        res_idx=lig_idx,
+                        gemmi_mol=ligand,
+                        is_covalent=is_covalent,
                     )
-                )
+                    residues.append(residue)
+
+                if residues:
+                    chains.append(
+                        ParsedChain(
+                            name=subchain_id,
+                            entity=entity.name,
+                            residues=residues,
+                            type=const.chain_type_ids["NONPOLYMER"],
+                        )
+                    )
 
     # If no chains parsed fail
     if not chains:
@@ -1010,7 +1012,7 @@ def parse_mmcif(  # noqa: C901, PLR0915, PLR0912
                 if parsed_polymer is not None:
                     ensemble_chains[ref_chain_map[subchain_id]] = parsed_polymer
 
-            # Parse a non-polymer
+
             elif entity_type in {"NonPolymer", "Branched"}:
                 # Skip UNL
                 if any(lig.name == "UNL" for lig in raw_chain):

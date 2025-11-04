@@ -236,6 +236,9 @@ class ProteinHunter:
                 template_chain_id_list = (
                     smart_split(a.template_chain_id) if a.template_chain_id else []
                 )
+                template_cif_chain_id_list = (
+                    smart_split(a.template_cif_chain_id) if a.template_cif_chain_id else []
+                )
                 template_files = [get_cif(tp) for tp in template_path_list]
                 for i, template_file in enumerate(template_files):
                     t_block = (
@@ -245,6 +248,7 @@ class ProteinHunter:
                     )
                     if template_chain_id_list and i < len(template_chain_id_list):
                         t_block["chain_id"] = template_chain_id_list[i]
+                        t_block["cif_chain_id"] = template_cif_chain_id_list[i]
                     templates.append(t_block)
 
             data = {"sequences": sequences}
@@ -668,7 +672,8 @@ class ProteinHunter:
             )
 
     def run_pipeline(self):
-        """Orchestrates the entire protein design and validation pipeline."""
+        ""
+        "Orchestrates the entire protein design and validation pipeline."""
         # 1. Prepare Base Data
         base_data, pocket_conditioning = self._build_initial_data_dict()
 
