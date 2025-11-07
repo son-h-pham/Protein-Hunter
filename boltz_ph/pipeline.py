@@ -53,14 +53,12 @@ class InputDataBuilder:
         protein_ids = a.protein_ids
         protein_seqs = a.protein_seqs
         protein_msas = a.protein_msas
-        cyclics = a.cyclics
 
         # Handle various separator formats (comma, colon, space) or single string
         if ":" not in protein_ids and "," not in protein_ids and " " not in protein_ids.strip():
             protein_ids_list = [protein_ids.strip()] if protein_ids.strip() else []
             protein_seqs_list = [protein_seqs.strip()] if protein_seqs.strip() else []
             protein_msas_list = [protein_msas.strip()] if protein_msas.strip() else []
-            cyclics_list = [cyclics.strip()] if cyclics.strip() else []
         else:
             protein_ids_list = smart_split(protein_ids)
             protein_seqs_list = smart_split(protein_seqs)
@@ -69,16 +67,12 @@ class InputDataBuilder:
                 if protein_msas
                 else [""] * len(protein_ids_list)
             )
-            cyclics_list = (
-                smart_split(cyclics) if cyclics else ["False"] * len(protein_ids_list)
-            )
 
         # Pad lists to the max length found
         max_len = max(
             len(protein_ids_list),
             len(protein_seqs_list),
             len(protein_msas_list),
-            len(cyclics_list),
         )
         while len(protein_ids_list) < max_len:
             protein_ids_list.append("")
@@ -86,10 +80,8 @@ class InputDataBuilder:
             protein_seqs_list.append("")
         while len(protein_msas_list) < max_len:
             protein_msas_list.append("")
-        while len(cyclics_list) < max_len:
-            cyclics_list.append("False")
 
-        return protein_ids_list, protein_seqs_list, protein_msas_list, cyclics_list
+        return protein_ids_list, protein_seqs_list, protein_msas_list
 
 
     def build(self):
@@ -132,7 +124,7 @@ class InputDataBuilder:
     def _build_conditional_data(self):
         """Constructs data for conditioned design (binder + target + optional non-protein)."""
         a = self.args
-        protein_ids_list, protein_seqs_list, protein_msas_list, cyclics_list = (
+        protein_ids_list, protein_seqs_list, protein_msas_list = (
             self._process_sequence_inputs()
         )
         print("protein_msas_list", protein_msas_list)
@@ -174,18 +166,16 @@ class InputDataBuilder:
                 seq_to_final_msa[seq] = chosen_msa
 
         # Step 2: Build sequences list for target proteins
-        for pid, seq, cyc in zip(protein_ids_list, protein_seqs_list, cyclics_list):
+        for pid, seq in zip(protein_ids_list, protein_seqs_list):
             if not pid or not seq:
                 continue
             final_msa = seq_to_final_msa.get(seq, "empty")
-            cyc_val = cyc.lower() in ["true", "1", "yes"]
             sequences.append(
                 {
                     "protein": {
                         "id": [pid],
                         "sequence": seq,
                         "msa": final_msa,
-                        "cyclic": cyc_val,
                     }
                 }
             )
@@ -197,7 +187,7 @@ class InputDataBuilder:
                     "id": [a.binder_chain],
                     "sequence": "X",
                     "msa": "empty",
-                    "cyclic": False,
+                    "cyclic": a.cyclic,
                 }
             }
         )

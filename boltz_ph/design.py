@@ -27,6 +27,7 @@ def parse_args():
     )
     parser.add_argument("--num_designs", default=50, type=int)
     parser.add_argument("--num_cycles", default=5, type=int)
+    parser.add_argument("--cyclic", action="store_true", default=False, help="Enable cyclic peptide design.")
     parser.add_argument("--binder_chain", default="A", type=str)
     parser.add_argument("--min_design_protein_length", default=100, type=int)
     parser.add_argument("--max_design_protein_length", default=150, type=int)
@@ -37,7 +38,7 @@ def parse_args():
         type=str,
     )
     parser.add_argument("--protein_msas", default="empty", type=str)
-    parser.add_argument("--cyclics", default="", type=str)
+    
     parser.add_argument("--ligand_id", default="B", type=str)
     parser.add_argument("--ligand_smiles", default="", type=str)
     parser.add_argument("--ligand_ccd", default="", type=str)

@@ -88,7 +88,6 @@ To use AlphaFold3 validation, make sure your AlphaFold3 Docker is installed, spe
   python boltz_ph/design.py --num_designs 3 --num_cycles 7 --protein_seqs AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPYAAALE --protein_ids B --protein_msas "" --gpu_id 2 --name PDL1_mix_aa --percent_X 50 --min_design_protein_length 90 --max_design_protein_length 150 --high_iptm_threshold 0.7 --use_msa_for_af3 --plot
   ```
 
-
 - **Protein-protein contact specification design:**  
   By default, contact potentials are disabled. To enable contact-based potentials and specify interface residue positions (e.g., residue positions "2,3,10" in the target chain), add `--no_potentials False` and `--contact_residues 2,3,10` to your command. For example:
   ```
@@ -101,6 +100,11 @@ To use AlphaFold3 validation, make sure your AlphaFold3 Docker is installed, spe
   python boltz_ph/design.py --num_designs 3 --num_cycles 7 --protein_seqs AGIKVFGHPASIATRRVLIALHEKNLDFELVHVELKDGEHKKEPFLSRNPFGQVPAFEDGDLKLFESRAITQYIAHRYENQGTNLLQTDSKNISQYAIMAIGMQVEDHQFDPVASKLAFEQIFKSIYGLTTDEAVVAEEEAKLAKVLDVYEARLKEFKYLAGETFTLTDLHHIPAIQYLLGTPTKKLFTERPRVNEWVAEITKRPASEKVQ:AGIKVFGHPASIATRRVLIALHEKNLDFELVHVELKDGEHKKEPFLSRNPFGQVPAFEDGDLKLFESRAITQYIAHRYENQGTNLLQTDSKNISQYAIMAIGMQVEDHQFDPVASKLAFEQIFKSIYGLTTDEAVVAEEEAKLAKVLDVYEARLKEFKYLAGETFTLTDLHHIPAIQYLLGTPTKKLFTERPRVNEWVAEITKRPASEKVQ --protein_ids B:C --protein_msas "" --gpu_id 0 --name 1GNW_mix_aa --min_design_protein_length 90 --max_design_protein_length 150 --high_iptm_threshold 0.7 --use_msa_for_af3 --plot
   ```
 
+
+- **Cyclic peptide binder design**
+  ```
+  python boltz_ph/design.py --num_designs 3 --num_cycles 7 --protein_seqs AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPYAAALE --protein_ids B --protein_msas "" --gpu_id 0 --name PDL1_mix_aa --min_design_protein_length 10 --max_design_protein_length 20 --high_iptm_threshold 0.8 --use_msa_for_af3 --plot --cyclic
+  ```
 
 - **Small molecule binder design:**  
   For designing a protein binder for a small molecule (e.g., SAM), use:  
@@ -129,7 +133,7 @@ To use AlphaFold3 validation, make sure your AlphaFold3 Docker is installed, spe
 - **Unconditional protein design:**  
   Generate de novo proteins of a desired length:
   ```
-  python chai_ph/design.py --jobname unconditional_design --length 120 --percent_X 0 --seq "" --target_seq ACDEFGHIKLMNPQRSTVWY --cyclic --n_trials 1 --n_cycles 5 --n_recycles 3 --n_diff_steps 200 --hysteresis_mode templates --repredict --omit_aa "" --temperature 0.1 --scale_temp_by_plddt --render_freq 100 --gpu_id 2 --plot
+  python chai_ph/design.py --jobname unconditional_design --length 120 --percent_X 0 --seq "" --target_seq ACDEFGHIKLMNPQRSTVWY --n_trials 1 --n_cycles 5 --n_recycles 3 --n_diff_steps 200 --hysteresis_mode templates --repredict --omit_aa "" --temperature 0.1 --scale_temp_by_plddt --render_freq 100 --gpu_id 2 --plot
 
 - **Protein binder design:**  
   To design a binder for a specific protein target (e.g., PDL1):
@@ -137,7 +141,7 @@ To use AlphaFold3 validation, make sure your AlphaFold3 Docker is installed, spe
   python chai_ph/design.py --jobname PDL1_binder --length 120 --percent_X 80 --seq "" --target_seq AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPYAAALE --n_trials 1 --n_cycles 5 --n_recycles 3 --n_diff_steps 200 --hysteresis_mode templates --repredict --omit_aa "" --temperature 0.1 --scale_temp_by_plddt --render_freq 100 --gpu_id 2 --use_msa_for_af3 --plot
   ```
 
-- **Cyclic protein binder design:**  
+- **Cyclic peptide binder design:**  
   Design a cyclic peptide binder for a specific protein target:
   ```
   python chai_ph/design.py --jobname PDL1_cyclic_binder --length 120 --percent_X 80 --seq "" --cyclic --target_seq AFTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPYAAALE --n_trials 1 --n_cycles 5 --n_recycles 3 --n_diff_steps 200 --hysteresis_mode templates --repredict --omit_aa "" --temperature 0.1 --scale_temp_by_plddt --render_freq 100 --gpu_id 2 --use_msa_for_af3 --plot
