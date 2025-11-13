@@ -355,9 +355,19 @@ class ProteinHunter_Boltz:
             raise ValueError("Binder chain not found in data dictionary.")
 
         # Set initial binder sequence
-        initial_seq = sample_seq(
-            binder_length, exclude_P=a.exclude_P, frac_X=a.percent_X/100
-        )
+        # Use custom initial_sequence if provided, otherwise use sample_seq
+        if a.initial_sequence:
+            initial_seq = a.initial_sequence
+            print(f"Using custom initial sequence: {initial_seq}")
+            print(f"Initial sequence length: {len(initial_seq)}")
+            # Override binder_length to match the provided sequence
+            binder_length = len(initial_seq)
+        else:
+            initial_seq = sample_seq(
+                binder_length, exclude_P=a.exclude_P, frac_X=a.percent_X/100
+            )
+            print(f"Generated random initial sequence of length: {binder_length}")
+        
         update_binder_sequence(initial_seq)
         print(f"Binder initial sequence length: {binder_length}")
 
