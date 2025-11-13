@@ -103,6 +103,14 @@ def parse_args():
     parser.add_argument("--max_contact_filter_retries", default=6, type=int)
     parser.add_argument("--contact_cutoff", default=15.0, type=float)
 
+    # NEW: Add initial_sequence argument to override sample_seq
+    parser.add_argument(
+        "--initial_sequence",
+        default="",
+        type=str,
+        help="Override sample_seq with a custom initial sequence for the binder. If provided, this sequence will be used instead of randomly generating one.",
+    )
+
     parser.add_argument(
         "--alphafold_dir", default=os.path.expanduser("~/alphafold3"), type=str
     )
