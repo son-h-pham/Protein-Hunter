@@ -423,8 +423,8 @@ class ProteinHunter_Boltz:
                 break
 
             # Resample initial sequence
-            new_seq = sample_seq(binder_length, exclude_P=a.exclude_P, frac_X=a.percent_X/100)
-            update_binder_sequence(new_seq)
+            #new_seq = sample_seq(binder_length, exclude_P=a.exclude_P, frac_X=a.percent_X/100)
+            #update_binder_sequence(new_seq)
             clean_memory()
 
         clean_memory() # <-- ADD THIS CALL HERE
@@ -475,13 +475,24 @@ class ProteinHunter_Boltz:
                 if (a.ligand_smiles or a.ligand_ccd or a.nucleic_seq)
                 else "soluble_mpnn"
             )
+            
+            # Format fixed_positions or redesigned_residues based on user input
+            formatted_positions = a.fixed_residues
+            
             design_kwargs = {
                 "pdb_file": pdb_filename,
                 "temperature": temperature,
                 "chains_to_design": a.binder_chain,
                 "omit_AA": f"{a.omit_AA},P" if cycle == 0 else a.omit_AA,
                 "bias_AA": f"A:{alpha}" if a.alanine_bias else "",
+                "extra_args": {} # Initialize empty extra_args dict
             }
+            
+            # Add fixed_positions to extra_args, as requested
+            if formatted_positions:
+                design_kwargs["extra_args"]["--fixed_residues"] = formatted_positions
+                # This print is now handled by model_utils, but we keep this for legacy
+                print(f"  Queueing fixed_residues: {formatted_positions}")
 
             seq_str, logits = design_sequence(
                 self.designer, model_type, **design_kwargs
