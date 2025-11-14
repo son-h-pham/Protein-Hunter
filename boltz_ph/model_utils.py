@@ -577,8 +577,39 @@ def design_sequence(
     bias_AA="",
     temperature=0.02,
     return_logits=False,
+    extra_args=None,
 ):
-    """Runs the LigandMPNN (or SolubleMPNN) sequence design wrapper."""
+    """
+    Runs the LigandMPNN (or SolubleMPNN) sequence design wrapper.
+    
+    Args:
+        designer: LigandMPNNWrapper instance
+        model_type: "ligand_mpnn" or "soluble_mpnn"
+        pdb_file: Path to PDB structure file
+        chains_to_design: Chain IDs to design (e.g., "A")
+        omit_AA: Amino acids to exclude from design (e.g., "C,P")
+        bias_AA: Amino acid bias specification (e.g., "A:-0.3")
+        temperature: Sampling temperature
+        return_logits: Whether to return logits
+        extra_args: Dictionary of extra CLI arguments for LigandMPNN
+    
+    Returns:
+        Tuple of (sequence_string, logits)
+    """
+    # Build extra_args dictionary
+    final_extra_args = {
+        "--temperature": temperature,
+        "--batch_size": 1,
+    }
+    
+    # Merge with user-provided extra_args
+    if extra_args:
+        final_extra_args.update(extra_args)
+    
+    # Print for clarity if fixed_residues was passed
+    if "--fixed_residues" in final_extra_args:
+         print(f"  LigandMPNN: Using fixed_residues = {final_extra_args['--fixed_residues']}")
+    
     seq, logits = designer.run(
         model_type=model_type,
         pdb_path=pdb_file,
@@ -587,10 +618,7 @@ def design_sequence(
         bias_AA=bias_AA,
         omit_AA=omit_AA,
         return_logits=return_logits,
-        extra_args={
-            "--temperature": temperature,
-            "--batch_size": 1,
-        },
+        extra_args=final_extra_args,
     )
     if return_logits:
         return seq, logits
