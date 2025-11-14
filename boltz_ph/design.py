@@ -135,6 +135,19 @@ def parse_args():
     parser.add_argument("--alanine_bias", action="store_true")
 
     parser.add_argument("--high_iptm_threshold", default=0.8, type=float)
+    
+    # ========== NEW ARGUMENTS FOR FIXED POSITIONS ==========
+    parser.add_argument(
+        "--fixed_residues",
+        default="",
+        type=str,
+        help="Residue positions in the binder chain to keep constant during LigandMPNN design. "
+             "Format: comma-separated list of positions or ranges. "
+             "Examples: '1,2,5' or '1-10,15,20-25' or '1-10,15-20'. "
+             "Positions are 1-indexed. Leave empty to design all positions."
+    )
+    
+    # ========================================================
     # --- End Existing Arguments ---
 
     return parser.parse_args()
